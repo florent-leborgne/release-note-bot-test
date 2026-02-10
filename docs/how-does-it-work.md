@@ -119,15 +119,19 @@ The AI model follows these rules when generating release notes:
 
 ### Word limits by change type
 
-The word limit varies depending on the label. These are maximums, not targets — shorter is always better.
+Word limits are intentionally tied to the type of change. The goal is to **give more space to changes that have a bigger impact on the product and its users**. A new feature deserves a fuller description so readers understand what's now possible and why it matters. A bug fix, on the other hand, usually needs just a single sentence — the reader only needs to know what was broken and that it's now fixed.
 
-| Label | Change type | Max words |
-|---|---|---|
-| `release_note:feature` | New feature | 100 |
-| `release_note:enhancement` | Enhancement | 50 |
-| `release_note:fix` | Bug fix | 30 |
-| `release_note:breaking` | Breaking change | No limit |
-| `release_note:deprecation` | Deprecation | No limit |
+This approach keeps release notes scannable: high-impact changes stand out with richer descriptions, while smaller fixes and improvements stay concise and don't compete for the reader's attention.
+
+The word limits below are maximums, not targets — shorter is always better.
+
+| Label | Change type | Max words | Rationale |
+|---|---|---|---|
+| `release_note:feature` | New feature | 100 | New capabilities need enough space to explain what you can now do and why it matters. |
+| `release_note:enhancement` | Enhancement | 50 | Improvements to existing features — readers already have context, so less explanation is needed. |
+| `release_note:fix` | Bug fix | 30 | One sentence: what was broken, now it works. |
+| `release_note:breaking` | Breaking change | No limit | Breaking changes need as much space as necessary to explain what changed, why, and what action the reader must take. |
+| `release_note:deprecation` | Deprecation | No limit | Deprecations must clearly explain what is going away, when, and what to use instead. |
 
 ### Naming accuracy
 
