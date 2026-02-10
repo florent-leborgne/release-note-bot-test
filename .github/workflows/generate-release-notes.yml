@@ -169,6 +169,7 @@ jobs:
             });
 
             core.setOutput('data', result);
+            core.setOutput('pr_author', prMeta.user.login);
 
       - name: Determine word limit from label
         id: word-limit
@@ -263,6 +264,7 @@ jobs:
         env:
           RELEASE_NOTE: ${{ steps.generate.outputs.release_note }}
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          PR_AUTHOR: ${{ steps.pr-data.outputs.pr_author }}
         with:
           script: |
             const releaseNote = process.env.RELEASE_NOTE;
@@ -292,12 +294,13 @@ jobs:
             const marker = '<!-- release-note-bot -->';
             const existingComment = comments.find(c => c.body.includes(marker));
 
+            const prAuthor = process.env.PR_AUTHOR;
+
             const body = [
               marker,
               '## 📋 Suggested Release Note',
               '',
-              '> [!TIP]',
-              '> You can **edit this comment** to refine the wording. When you\'re happy with it, check the box below.',
+              `@${prAuthor} — please review the suggested release note below. You can **edit this comment** to refine the wording. When you're happy with it, check the box at the bottom.`,
               '',
               '<!-- RELEASE_NOTE_START -->',
               releaseNote,
