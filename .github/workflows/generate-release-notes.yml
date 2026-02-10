@@ -1,0 +1,328 @@
+---
+name: Generate Release Notes
+
+on:
+  pull_request_target:
+    types: [labeled]
+    branches:
+      - main
+
+  # Manual trigger for testing — run from the Actions tab
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to generate a release note for'
+        required: true
+        type: number
+      pr_owner:
+        description: 'Repo owner (default: current repo owner)'
+        required: false
+        type: string
+      pr_repo:
+        description: 'Repo name (default: current repo name)'
+        required: false
+        type: string
+      label:
+        description: 'Release note type label (e.g. release_note:fix)'
+        required: false
+        type: choice
+        options:
+          - release_note:feature
+          - release_note:enhancement
+          - release_note:fix
+          - release_note:breaking
+          - release_note:deprecation
+        default: 'release_note:enhancement'
+      dry_run:
+        description: 'Dry run — log the result instead of posting a comment'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  generate-release-notes:
+    runs-on: ubuntu-latest
+    # On label events, only run for release_note:* labels.
+    # On workflow_dispatch, always run.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.label.name == 'release_note:feature' ||
+      github.event.label.name == 'release_note:enhancement' ||
+      github.event.label.name == 'release_note:fix' ||
+      github.event.label.name == 'release_note:breaking' ||
+      github.event.label.name == 'release_note:deprecation'
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      models: read
+    steps:
+      - name: Get PR details, diff, comments, and linked issues
+        id: pr-data
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Resolve PR coordinates — from label event or manual dispatch
+            const owner = '${{ inputs.pr_owner }}' || context.repo.owner;
+            const repo = '${{ inputs.pr_repo }}' || context.repo.repo;
+            const prNumber = ${{ inputs.pr_number || 0 }} || context.payload.pull_request?.number;
+
+            if (!prNumber) {
+              core.setFailed('Could not determine PR number.');
+              return;
+            }
+            core.info(`Generating release note for ${owner}/${repo}#${prNumber}`);
+
+            // --- 1. PR metadata (title, body) ---
+            const { data: prMeta } = await github.rest.pulls.get({
+              owner, repo,
+              pull_number: prNumber
+            });
+            const prTitle = prMeta.title;
+            const prBody = prMeta.body || '';
+
+            // --- 2. PR diff ---
+            const { data: diff } = await github.rest.pulls.get({
+              owner, repo,
+              pull_number: prNumber,
+              mediaType: { format: 'diff' }
+            });
+
+            // --- 3. Changed files ---
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner, repo,
+              pull_number: prNumber,
+              per_page: 100
+            });
+            const filesSummary = files.map(f =>
+              `${f.status}: ${f.filename} (+${f.additions} -${f.deletions})`
+            ).join('\n');
+
+            // --- 4. PR comments (conversation, not review comments) ---
+            const { data: prComments } = await github.rest.issues.listComments({
+              owner, repo,
+              issue_number: prNumber,
+              per_page: 50
+            });
+            // Filter out bot comments and the release-note-bot's own comments
+            const humanComments = prComments
+              .filter(c => c.user.type !== 'Bot' && !c.body.includes('<!-- release-note-bot -->'))
+              .map(c => `@${c.user.login}: ${c.body}`)
+              .join('\n\n');
+
+            // --- 5. Linked issues ---
+            // Parse issue references from the PR body:
+            //   - #123
+            //   - owner/repo#123
+            //   - https://github.com/owner/repo/issues/123
+            const issueRefs = new Set();
+
+            // Match #123
+            for (const m of prBody.matchAll(/(?<![\/\w])#(\d+)/g)) {
+              issueRefs.add(`${owner}/${repo}#${m[1]}`);
+            }
+            // Match owner/repo#123
+            for (const m of prBody.matchAll(/([\w.-]+\/[\w.-]+)#(\d+)/g)) {
+              issueRefs.add(`${m[1]}#${m[2]}`);
+            }
+            // Match full GitHub issue URLs
+            for (const m of prBody.matchAll(/https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/issues\/(\d+)/g)) {
+              issueRefs.add(`${m[1]}#${m[2]}`);
+            }
+
+            // Fetch each linked issue's title and body
+            const linkedIssues = [];
+            for (const ref of issueRefs) {
+              const match = ref.match(/^([\w.-]+)\/([\w.-]+)#(\d+)$/);
+              if (!match) continue;
+              try {
+                const { data: issue } = await github.rest.issues.get({
+                  owner: match[1],
+                  repo: match[2],
+                  issue_number: parseInt(match[3])
+                });
+                linkedIssues.push(
+                  `### ${ref}: ${issue.title}\n${issue.body || '(no description)'}`
+                );
+              } catch (e) {
+                core.warning(`Could not fetch linked issue ${ref}: ${e.message}`);
+              }
+            }
+            const linkedIssuesText = linkedIssues.length > 0
+              ? linkedIssues.join('\n\n')
+              : '(none)';
+
+            // --- 6. Truncate diff if too large for the model context ---
+            const maxDiffLength = 10000;
+            const truncatedDiff = diff.length > maxDiffLength
+              ? diff.substring(0, maxDiffLength) + '\n\n... (diff truncated for length)'
+              : diff;
+
+            // --- Build output ---
+            const result = JSON.stringify({
+              title: prTitle,
+              body: prBody || '(no description)',
+              diff: truncatedDiff,
+              files: filesSummary,
+              comments: humanComments || '(no comments)',
+              linkedIssues: linkedIssuesText
+            });
+
+            core.setOutput('data', result);
+
+      - name: Determine word limit from label
+        id: word-limit
+        run: |
+          LABEL="${{ github.event.label.name || inputs.label || 'release_note:enhancement' }}"
+          case "$LABEL" in
+            release_note:breaking)     WORD_LIMIT="" ;; # no limit
+            release_note:deprecation)  WORD_LIMIT="" ;; # no limit
+            release_note:feature)      WORD_LIMIT="100" ;;
+            release_note:enhancement)  WORD_LIMIT="50" ;;
+            release_note:fix)          WORD_LIMIT="30" ;;
+            *)                         WORD_LIMIT="50" ;;
+          esac
+          echo "label=$LABEL" >> "$GITHUB_OUTPUT"
+          echo "word_limit=$WORD_LIMIT" >> "$GITHUB_OUTPUT"
+          echo "Label: $LABEL → Word limit: ${WORD_LIMIT:-none}"
+
+      - name: Generate release note via GitHub Models
+        id: generate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_DATA: ${{ steps.pr-data.outputs.data }}
+          WORD_LIMIT: ${{ steps.word-limit.outputs.word_limit }}
+          LABEL: ${{ steps.word-limit.outputs.label }}
+        run: |
+          # Build the prompt from PR data
+          PR_TITLE=$(echo "$PR_DATA" | jq -r '.title')
+          PR_BODY=$(echo "$PR_DATA" | jq -r '.body')
+          PR_FILES=$(echo "$PR_DATA" | jq -r '.files')
+          PR_DIFF=$(echo "$PR_DATA" | jq -r '.diff')
+          PR_COMMENTS=$(echo "$PR_DATA" | jq -r '.comments')
+          PR_LINKED_ISSUES=$(echo "$PR_DATA" | jq -r '.linkedIssues')
+
+          # Build the word limit instruction
+          if [ -n "$WORD_LIMIT" ]; then
+            LENGTH_INSTRUCTION="Your response MUST be ${WORD_LIMIT} words or fewer. Shorter is always better — ${WORD_LIMIT} words is the maximum, not the target."
+          else
+            LENGTH_INSTRUCTION="There is no strict word limit for this type of change, but be as concise as possible."
+          fi
+
+          # Derive the change type for the prompt
+          CHANGE_TYPE="${LABEL#release_note:}"
+
+          # Create the messages payload
+          PAYLOAD=$(jq -n \
+            --arg title "$PR_TITLE" \
+            --arg body "$PR_BODY" \
+            --arg files "$PR_FILES" \
+            --arg diff "$PR_DIFF" \
+            --arg comments "$PR_COMMENTS" \
+            --arg issues "$PR_LINKED_ISSUES" \
+            --arg length "$LENGTH_INSTRUCTION" \
+            --arg change_type "$CHANGE_TYPE" \
+            '{
+              "model": "openai/gpt-4.1",
+              "messages": [
+                {
+                  "role": "system",
+                  "content": ("You are a technical writer who creates clear, concise release notes for end users. You focus on what changed from the USER perspective, not internal code details. Write in plain language. Use present tense. Address the reader directly as \"you\". Write exactly ONE short paragraph. Use all available context — the PR description, discussion comments, and linked issues — to understand the motivation and user impact of the change. CRITICAL: Always use the exact product and feature names as they appear in the PR title and description — never abbreviate, paraphrase, or substitute them (e.g. write \"ES|QL\" not \"EQL\", \"Kibana\" not \"the dashboard tool\"). " + $length)
+                },
+                {
+                  "role": "user",
+                  "content": ("Summarize the following pull request as a release note entry for end users. This is a **" + $change_type + "** change.\n\n## PR Title\n" + $title + "\n\n## PR Description\n" + $body + "\n\n## PR Comments (discussion)\n" + $comments + "\n\n## Linked Issues\n" + $issues + "\n\n## Changed Files\n" + $files + "\n\n## Diff\n```\n" + $diff + "\n```\n\nWrite a single release note paragraph that:\n- Describes what changed from the user/reader perspective\n- Uses clear, non-technical language where possible\n- Starts with a verb (Adds, Fixes, Updates, Removes, etc.)\n- Does NOT mention file names, internal code, or implementation details\n- Uses the linked issues and PR comments to understand WHY the change was made and what problem it solves for users\n\nDo NOT use bullet points. Write exactly one short paragraph. " + $length)
+                }
+              ],
+              "temperature": 0.3,
+              "max_tokens": 500
+            }')
+
+          # Call GitHub Models API
+          RESPONSE=$(curl -s -X POST \
+            "https://models.github.ai/inference/chat/completions" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD")
+
+          # Extract the generated text
+          RELEASE_NOTE=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty')
+
+          if [ -z "$RELEASE_NOTE" ]; then
+            echo "::error::Failed to generate release note. API response: $RESPONSE"
+            exit 1
+          fi
+
+          # Write to output using delimiter to handle multiline
+          echo "release_note<<RELEASE_NOTE_EOF" >> "$GITHUB_OUTPUT"
+          echo "$RELEASE_NOTE" >> "$GITHUB_OUTPUT"
+          echo "RELEASE_NOTE_EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Post release note as PR comment
+        uses: actions/github-script@v7
+        env:
+          RELEASE_NOTE: ${{ steps.generate.outputs.release_note }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        with:
+          script: |
+            const releaseNote = process.env.RELEASE_NOTE;
+            const dryRun = process.env.DRY_RUN === 'true';
+
+            // In dry-run mode, just log the result and exit
+            if (dryRun) {
+              core.info('=== DRY RUN — Release note output ===');
+              core.info(releaseNote);
+              core.summary.addHeading('Suggested Release Note (dry run)', 2);
+              core.summary.addRaw(releaseNote);
+              await core.summary.write();
+              return;
+            }
+
+            // Resolve PR coordinates
+            const owner = '${{ inputs.pr_owner }}' || context.repo.owner;
+            const repo = '${{ inputs.pr_repo }}' || context.repo.repo;
+            const prNumber = ${{ inputs.pr_number || 0 }} || context.payload.pull_request?.number;
+
+            // Check if there's already a release note comment from this bot
+            const { data: comments } = await github.rest.issues.listComments({
+              owner, repo,
+              issue_number: prNumber
+            });
+
+            const marker = '<!-- release-note-bot -->';
+            const existingComment = comments.find(c => c.body.includes(marker));
+
+            const body = [
+              marker,
+              '## 📋 Suggested Release Note',
+              '',
+              '> [!TIP]',
+              '> You can **edit this comment** to refine the wording. When you\'re happy with it, check the box below.',
+              '',
+              '<!-- RELEASE_NOTE_START -->',
+              releaseNote,
+              '<!-- RELEASE_NOTE_END -->',
+              '',
+              '- [ ] **Approved** — this release note is ready to be included.',
+              '',
+              '---',
+              '_Generated by the release-note bot._'
+            ].join('\n');
+
+            if (existingComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner, repo,
+                comment_id: existingComment.id,
+                body
+              });
+              core.info(`Updated existing release note comment: ${existingComment.html_url}`);
+            } else {
+              // Create new comment
+              const { data: comment } = await github.rest.issues.createComment({
+                owner, repo,
+                issue_number: prNumber,
+                body
+              });
+              core.info(`Created release note comment: ${comment.html_url}`);
+            }
