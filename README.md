@@ -41,18 +41,32 @@ Test repo for the **release-note bot** GitHub Action — an AI-powered workflow 
 
 ### Option 3: Local test script
 
+Run the test script from your terminal. It gathers the same PR context as the workflow, calls the GitHub Models API, and prints the result.
+
+You can pass a full PR URL — the script extracts the repo and PR number automatically:
+
 ```bash
-export GH_MODELS_TOKEN="your_github_pat_with_models_read_scope"
+# Defaults to release_note:enhancement
+.github/scripts/test-release-note.sh https://github.com/elastic/kibana/pull/123
 
-# Test as a fix (20 word limit)
-.github/scripts/test-release-note.sh owner/repo 123 release_note:fix
-
-# Test as a feature (50 word limit)
-.github/scripts/test-release-note.sh owner/repo 123 release_note:feature
+# Specify a label
+.github/scripts/test-release-note.sh https://github.com/elastic/kibana/pull/123 release_note:fix
 ```
+
+Or use the `owner/repo PR_NUMBER [label]` format:
+
+```bash
+.github/scripts/test-release-note.sh elastic/kibana 123 release_note:feature
+```
+
+**Prerequisites:** [`gh`](https://cli.github.com/) (GitHub CLI), `jq`, `curl`.
 
 ## Setup
 
 No secrets are required for the GitHub Actions workflow — it uses the built-in `GITHUB_TOKEN` with `models: read` permission.
 
-For local testing, you need a GitHub PAT with the `models:read` scope.
+For local testing, the script uses your `gh auth` token by default. You can also set `GH_MODELS_TOKEN` explicitly:
+
+```bash
+export GH_MODELS_TOKEN="your_github_pat_with_models_read_scope"
+```
