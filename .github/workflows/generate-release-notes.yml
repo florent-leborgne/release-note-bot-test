@@ -176,12 +176,12 @@ jobs:
         run: |
           LABEL="${{ github.event.label.name || inputs.label || 'release_note:enhancement' }}"
           case "$LABEL" in
-            release_note:breaking)     WORD_LIMIT="" ;; # no limit
-            release_note:deprecation)  WORD_LIMIT="" ;; # no limit
-            release_note:feature)      WORD_LIMIT="100" ;;
-            release_note:enhancement)  WORD_LIMIT="50" ;;
-            release_note:fix)          WORD_LIMIT="30" ;;
-            *)                         WORD_LIMIT="50" ;;
+            release_note:breaking)     WORD_LIMIT="100" ;;
+            release_note:deprecation)  WORD_LIMIT="100" ;;
+            release_note:feature)      WORD_LIMIT="50" ;;
+            release_note:enhancement)  WORD_LIMIT="30" ;;
+            release_note:fix)          WORD_LIMIT="20" ;;
+            *)                         WORD_LIMIT="30" ;;
           esac
           echo "label=$LABEL" >> "$GITHUB_OUTPUT"
           echo "word_limit=$WORD_LIMIT" >> "$GITHUB_OUTPUT"

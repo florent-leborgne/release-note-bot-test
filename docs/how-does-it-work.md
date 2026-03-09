@@ -129,11 +129,11 @@ The word limits below are maximums, not targets — shorter is always better.
 
 | Label | Change type | Max words | Rationale |
 |---|---|---|---|
-| `release_note:feature` | New feature | 100 | New capabilities need enough space to explain what you can now do and why it matters. |
-| `release_note:enhancement` | Enhancement | 50 | Improvements to existing features — readers already have context, so less explanation is needed. |
-| `release_note:fix` | Bug fix | 30 | One sentence: what was broken, now it works. |
-| `release_note:breaking` | Breaking change | No limit | Breaking changes need as much space as necessary to explain what changed, why, and what action the reader must take. |
-| `release_note:deprecation` | Deprecation | No limit | Deprecations must clearly explain what is going away, when, and what to use instead. |
+| `release_note:feature` | New feature | 50 | New capabilities — briefly explain what you can now do. |
+| `release_note:enhancement` | Enhancement | 30 | Improvements to existing features — readers already have context, so less explanation is needed. |
+| `release_note:fix` | Bug fix | 20 | One sentence: what was broken, now it works. |
+| `release_note:breaking` | Breaking change | 100 | Breaking changes need enough space to explain what changed, why, and what action the reader must take. |
+| `release_note:deprecation` | Deprecation | 100 | Deprecations must clearly explain what is going away, when, and what to use instead. |
 
 ### Naming accuracy
 
