@@ -15,11 +15,11 @@ Test repo for the **release-note bot** GitHub Action — an AI-powered workflow 
 
 | Label | Type | Word limit |
 |---|---|---|
-| `release_note:feature` | New feature | 100 words |
-| `release_note:enhancement` | Enhancement | 50 words |
-| `release_note:fix` | Bug fix | 30 words |
-| `release_note:breaking` | Breaking change | No limit |
-| `release_note:deprecation` | Deprecation | No limit |
+| `release_note:feature` | New feature | 50 words |
+| `release_note:enhancement` | Enhancement | 30 words |
+| `release_note:fix` | Bug fix | 20 words |
+| `release_note:breaking` | Breaking change | 100 words |
+| `release_note:deprecation` | Deprecation | 100 words |
 | `release-note:approved` | Approved (set by bot) | — |
 
 ## Testing
@@ -44,10 +44,10 @@ Test repo for the **release-note bot** GitHub Action — an AI-powered workflow 
 ```bash
 export GH_MODELS_TOKEN="your_github_pat_with_models_read_scope"
 
-# Test as a fix (30 word limit)
+# Test as a fix (20 word limit)
 .github/scripts/test-release-note.sh owner/repo 123 release_note:fix
 
-# Test as a feature (100 word limit)
+# Test as a feature (50 word limit)
 .github/scripts/test-release-note.sh owner/repo 123 release_note:feature
 ```
 
